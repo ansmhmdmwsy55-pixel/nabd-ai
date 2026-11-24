@@ -47,3 +47,8 @@ def ask():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5050"))
     app.run(host="0.0.0.0", port=port, debug=False)
+
+@app.route("/manifest.json")
+def serve_manifest():
+    from flask import send_from_directory
+    return send_from_directory(".", "manifest.json")
