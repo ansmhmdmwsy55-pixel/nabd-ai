@@ -1,0 +1,55 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>نبض</title><style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:sans-serif}
+body{background:#0f1117;color:#f8fafc;display:flex;flex-direction:column;height:100dvh}
+header{background:#161b22;padding:10px 12px;border-bottom:1px solid #262c36;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+h1{font-size:1rem;color:#38bdf8}.ctrls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+select,button.top{background:#21262d;color:#e2e8f0;border:1px solid #30363d;padding:6px 8px;border-radius:8px;font-size:.78rem}
+button.newc{background:#0369a1;color:#fff;border:none;padding:6px 10px;border-radius:8px;font-size:.78rem;font-weight:bold}
+#sessions{background:#11161d;padding:8px 10px;border-bottom:1px solid #222934;display:flex;gap:6px;overflow-x:auto}
+.tab{background:#1b222c;color:#cbd5e1;border:1px solid #2b3442;padding:5px 10px;border-radius:18px;font-size:.76rem;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.tab.active{background:#0284c7;color:#fff;border-color:#38bdf8;font-weight:bold}
+#chat{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:86%;padding:10px 13px;border-radius:12px;line-height:1.65;white-space:pre-wrap}
+.u{background:#1d4ed8;color:#fff;align-self:flex-start}.b{background:#1e2430;color:#fff;align-self:flex-end;border:1px solid #2d3748}
+.err{border-color:#ef4444;background:#2a1619}.meta{font-size:.72rem;color:#94a3b8;margin-top:6px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.act{border:none;padding:4px 8px;border-radius:6px;font-size:.72rem;color:#fff}.play{background:#0f766e}.retry{background:#b45309}
+form{background:#161b22;padding:10px;border-top:1px solid #262c36;display:flex;gap:8px}
+input{flex:1;padding:10px;border-radius:10px;border:1px solid #334155;background:#0d1117;color:#fff;font-size:1rem}
+button.mic{background:#334155;color:#fff;border:none;padding:10px 12px;border-radius:10px;font-size:1rem}
+button.send{background:#0284c7;color:#fff;border:none;padding:10px 15px;border-radius:10px;font-weight:bold}
+</style></head><body>
+<header><h1>نبض</h1><div class="ctrls">
+<button type="button" class="newc" id="btnNew">+ محادثة</button>
+<button type="button" class="top" id="btnRename">تسمية</button>
+<select id="vprofile"><option value="child">صوت طفل</option><option value="woman">صوت امرأة</option><option value="man" selected>صوت راجل</option><option value="young_man">صوت شاب</option><option value="young_girl">صوت فتاة شابة</option><option value="sudanese_man">صوت راجل سوداني</option><option value="sudanese_youth">صوت شاب سوداني</option></select>
+<button type="button" class="top" id="vbtn">النطق: مفعل</button></div></header>
+<div id="sessions"></div><div id="chat"></div>
+<form id="f"><button type="button" class="mic" id="mic">🎤</button><input id="inp" placeholder="اكتب رسالتك..." autocomplete="off"><button type="submit" class="send">إرسال</button></form>
+<script>
+const chat=document.getElementById("chat"),sessionsEl=document.getElementById("sessions"),f=document.getElementById("f"),inp=document.getElementById("inp"),mic=document.getElementById("mic"),vbtn=document.getElementById("vbtn"),vprofile=document.getElementById("vprofile");
+let voiceOn=true,store={active:"",chats:[]};
+const PRESETS={child:{pitch:1.48,rate:1.12,fem:true},woman:{pitch:1.22,rate:1.02,fem:true},man:{pitch:.86,rate:.98,fem:false},young_man:{pitch:1.02,rate:1.08,fem:false},young_girl:{pitch:1.32,rate:1.08,fem:true},sudanese_man:{pitch:.82,rate:.94,fem:false},sudanese_youth:{pitch:.98,rate:1.04,fem:false}};
+function savePrefs(){localStorage.setItem("nabd_vp",vprofile.value);localStorage.setItem("nabd_vo",voiceOn?"1":"0");}
+function loadPrefs(){const p=localStorage.getItem("nabd_vp");if(p&&PRESETS[p])vprofile.value=p;if(localStorage.getItem("nabd_vo")==="0"){voiceOn=false;vbtn.textContent="النطق: متوقف";}}
+function speak(raw){if(!voiceOn||!("speechSynthesis" in window))return;const c=raw.replace(/[*_`#~]/g," ").trim();if(!c)return;try{window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(c),pr=PRESETS[vprofile.value]||PRESETS.man,ar=(window.speechSynthesis.getVoices()||[]).filter(v=>(v.lang||"").toLowerCase().startsWith("ar"));const re=pr.fem?/female|woman|girl|salma|hoda|laila|fatima|mariam/i:/male|man|tariq|omar|hassan|ali|yasir|karim/i;const v=ar.find(x=>re.test(x.name))||ar[0];if(v)u.voice=v;u.lang=(v&&v.lang)?v.lang:"ar-SA";u.pitch=pr.pitch;u.rate=pr.rate;window.speechSynthesis.speak(u);}catch(e){}}
+function saveStore(){localStorage.setItem("nabd_multi_v1",JSON.stringify(store));}
+function curChat(){return store.chats.find(c=>c.id===store.active)||store.chats[0];}
+function newChat(title){const id="c_"+Date.now();const idx=store.chats.length+1;store.chats.unshift({id,title:title||("محادثة "+idx),msgs:[]});store.active=id;saveStore();renderSessions();renderCurrentChat();}
+function renameChat(){const c=curChat();if(!c)return;const t=prompt("اسم المحادثة:",c.title);if(t&&t.trim()){c.title=t.trim().slice(0,30);saveStore();renderSessions();}}
+function delChat(id,ev){ev.stopPropagation();if(store.chats.length<=1){store.chats[0].msgs=[];store.chats[0].title="محادثة 1";saveStore();renderSessions();renderCurrentChat();return;}store.chats=store.chats.filter(c=>c.id!==id);if(store.active===id)store.active=store.chats[0].id;saveStore();renderSessions();renderCurrentChat();}
+function renderSessions(){sessionsEl.innerHTML="";store.chats.forEach(c=>{const b=document.createElement("div");b.className="tab"+(c.id===store.active?" active":"");b.onclick=()=>{store.active=c.id;saveStore();renderSessions();renderCurrentChat();};const sp=document.createElement("span");sp.textContent=c.title;const x=document.createElement("span");x.textContent=" ✕";x.onclick=e=>delChat(c.id,e);b.appendChild(sp);b.appendChild(x);sessionsEl.appendChild(b);});}
+function addM(role,text,sec="",isErr=false,q="",push=false){const d=document.createElement("div");d.className="msg "+(role==="u"?"u":"b")+(isErr?" err":"");const body=document.createElement("div");body.textContent=text;d.appendChild(body);if(sec!==""||isErr){const m=document.createElement("div");m.className="meta";const s=document.createElement("span");s.textContent=sec!==""?("الزمن: "+sec+" ثانية"):"تنبيه اتصال";m.appendChild(s);if(role==="b"&&!isErr){const bt=document.createElement("button");bt.type="button";bt.className="act play";bt.textContent="🔊 استمع";bt.onclick=()=>speak(text);m.appendChild(bt);}if(isErr&&q){const rb=document.createElement("button");rb.type="button";rb.className="act retry";rb.textContent="↻ إعادة محاولة";rb.onclick=()=>sendMsg(q,true);m.appendChild(rb);}d.appendChild(m);}chat.appendChild(d);chat.scrollTop=chat.scrollHeight;if(push){const c=curChat();if(c){c.msgs.push({role,text,sec,err:isErr?"1":"0"});if(role==="u"&&c.msgs.length===1)c.title=text.slice(0,22);saveStore();renderSessions();}}return d;}
+function renderCurrentChat(){chat.innerHTML="";const c=curChat();if(!c)return;(c.msgs||[]).forEach(i=>addM(i.role,i.text,i.sec,i.err==="1","",false));}
+async function sendMsg(t,retry=false){if(!t)return;if(!retry)addM("u",t,"",false,"",true);const w=addM("b","جارٍ الرد...",""),t0=performance.now(),c=curChat(),hist=c?c.msgs:[];try{const r=await fetch("/ask",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({history:hist})});const d=await r.json(),sec=((performance.now()-t0)/1000).toFixed(1);w.remove();const ok=!!d.ok;addM("b",d.reply||"لم يصل رد.",sec,!ok,t,true);if(ok)speak(d.reply);}catch(e){w.remove();addM("b","تعذر الاتصال بالخادم.","",true,t,true);}}
+f.onsubmit=e=>{e.preventDefault();const t=inp.value.trim();if(!t)return;inp.value="";sendMsg(t);};
+document.getElementById("btnNew").onclick=()=>newChat();
+document.getElementById("btnRename").onclick=()=>renameChat();
+vprofile.onchange=savePrefs;
+vbtn.onclick=()=>{voiceOn=!voiceOn;vbtn.textContent=voiceOn?"النطق: مفعل":"النطق: متوقف";if(!voiceOn&&window.speechSynthesis)window.speechSynthesis.cancel();savePrefs();};
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SR){const rec=new SR();rec.lang="ar-SA";mic.onclick=()=>{try{rec.start();}catch(e){}};rec.onresult=e=>{const s=e.results[0][0].transcript.trim();if(s){inp.value=s;sendMsg(s);}};}
+loadPrefs();
+try{const raw=JSON.parse(localStorage.getItem("nabd_multi_v1")||"null");if(raw&&Array.isArray(raw.chats)&&raw.chats.length){store=raw;if(!store.chats.some(c=>c.id===store.active))store.active=store.chats[0].id;}else{const id="c_init";store={active:id,chats:[{id,title:"محادثة نبض",msgs:[]}]};saveStore();}}catch(e){const id="c_init";store={active:id,chats:[{id,title:"محادثة نبض",msgs:[]}]};}
+renderSessions();renderCurrentChat();
+</script></body></html>
