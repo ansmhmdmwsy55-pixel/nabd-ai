@@ -4,13 +4,19 @@ from flask import Flask, request, jsonify, send_from_directory
 app = Flask(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 URL = "https://openrouter.ai/api/v1/chat/completions"
+SYSTEM_PROMPT = (
+    "اسمك نبض، مساعد ذكي عربي. "
+    "صانعك ومطورك هو أنس. إذا سُئلت عن صانعك أو مطورك أو من أنشأك، "
+    "أجب بوضوح وحسم أن صانعك ومطورك هو أنس، ولا تنسب نفسك لأي جهة أو شركة أخرى. "
+    "أجب بوضوح واختصار ودقة باللغة العربية."
+)
 
 def ask_nabd(history_list):
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     if not api_key:
         return {"ok": False, "text": "مفتاح الخدمة غير مضبوط في الخادم."}
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    msgs = [{"role": "system", "content": "اسمك نبض. أجب بوضوح واختصار ودقة باللغة العربية."}]
+    msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
     for m in history_list[-8:]:
         r = "user" if m.get("role") == "u" else "assistant"
         t = (m.get("text") or "").strip()
@@ -31,6 +37,10 @@ def ask_nabd(history_list):
 def home():
     return send_from_directory(BASE_DIR, "nabd_ui.html")
 
+@app.route("/manifest.json")
+def serve_manifest():
+    return send_from_directory(BASE_DIR, "manifest.json")
+
 @app.route("/ask", methods=["POST"])
 def ask():
     data = request.json or {}
@@ -47,8 +57,3 @@ def ask():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5050"))
     app.run(host="0.0.0.0", port=port, debug=False)
-
-@app.route("/manifest.json")
-def serve_manifest():
-    from flask import send_from_directory
-    return send_from_directory(".", "manifest.json")
