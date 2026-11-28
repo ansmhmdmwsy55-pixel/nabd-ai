@@ -37,6 +37,10 @@ def ask_nabd(history_list):
 def home():
     return send_from_directory(BASE_DIR, "nabd_ui.html")
 
+@app.route("/.well-known/assetlinks.json")
+def serve_assetlinks():
+    return send_from_directory(os.path.join(BASE_DIR, "static"), "assetlinks.json", mimetype="application/json")
+
 @app.route("/manifest.json")
 def serve_manifest():
     return send_from_directory(BASE_DIR, "manifest.json")

@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.anas.nabdai",
+        "sha256_cert_fingerprints": ["57:AB:A8:FF:18:DA:F1:08:61:53:08:81:3C:C3:5C:04:64:B8:7C:4D:E6:56:26:20:3C:CA:F2:B4:FF:97:00:2B"]
+      }
+    }]
