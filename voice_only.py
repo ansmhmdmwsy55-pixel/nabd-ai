@@ -33,6 +33,15 @@ def ask_nabd(history_list):
     except Exception:
         return {"ok": False, "text": "انقطع الاتصال بالشبكة مؤقتاً."}
 
+@app.route("/live-config")
+def live_config():
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    return jsonify({
+        "ok": bool(key),
+        "apiKey": key,
+        "systemPrompt": SYSTEM_PROMPT
+    })
+
 @app.route("/")
 def home():
     return send_from_directory(BASE_DIR, "nabd_ui.html")
