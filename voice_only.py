@@ -41,6 +41,10 @@ def home():
 def serve_manifest():
     return send_from_directory(BASE_DIR, "manifest.json")
 
+@app.route("/static/<path:filename>")
+def serve_static(filename):
+    return send_from_directory(os.path.join(BASE_DIR, "static"), filename)
+
 @app.route("/ask", methods=["POST"])
 def ask():
     data = request.json or {}
