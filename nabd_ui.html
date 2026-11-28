@@ -53,4 +53,114 @@ if(SR){const rec=new SR();rec.lang="ar-SA";mic.onclick=()=>{try{rec.start();}cat
 loadPrefs();
 try{const raw=JSON.parse(localStorage.getItem("nabd_multi_v1")||"null");if(raw&&Array.isArray(raw.chats)&&raw.chats.length){store=raw;if(!store.chats.some(c=>c.id===store.active))store.active=store.chats[0].id;}else{const id="c_init";store={active:id,chats:[{id,title:"محادثة نبض",msgs:[]}]};saveStore();}}catch(e){const id="c_init";store={active:id,chats:[{id,title:"محادثة نبض",msgs:[]}]};}
 renderSessions();renderCurrentChat();
+
+const liveBtn=document.createElement("button");
+liveBtn.type="button";liveBtn.className="top";liveBtn.id="btnLive";liveBtn.textContent="🎙️ Live";
+liveBtn.style.cssText="background:#14532d;border-color:#22c5e1;color:#dcfce7";
+document.querySelector("header .row:last-child")?.appendChild(liveBtn);
+
+const liveModal=document.createElement("div");
+liveModal.id="liveModal";
+liveModal.style.cssText="display:none;position:fixed;inset:0;background:rgba(2,6,23,.92);z-index:999;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:20px;color:#f8fafc;text-align:center";
+liveModal.innerHTML=`
+  <div style="font-size:1.3rem;font-weight:bold;color:#4ade80">نبض — محادثة صوتية مباشرة (Live)</div>
+  <div id="liveStatus" style="font-size:.95rem;color:#cbd5e1;max-width:340px;line-height:1.5">جاهز للاتصال. اضغط ابدأ للتحدث مباشرة بالصوت.</div>
+  <div id="liveOrb" style="width:96px;height:96px;border-radius:50%;background:#0f172a;border:3px solid #22c5e1;display:flex;align-items:center;justify-content:center;font-size:2.2rem;transition:transform .15s,box-shadow .15s">🎙️</div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+    <button type="button" id="liveToggle" style="background:#16a34a;color:#fff;border:none;padding:12px 22px;border-radius:12px;font-weight:bold;font-size:1rem">ابدأ Live</button>
+    <button type="button" id="liveMute" style="background:#334155;color:#fff;border:none;padding:12px 16px;border-radius:12px;font-size:.95rem">الميكروفون: مفتوح</button>
+    <button type="button" id="liveClose" style="background:#7f1d1d;color:#fecaca;border:none;padding:12px 16px;border-radius:12px;font-size:.95rem">إغلاق</button>
+  </div>`;
+document.body.appendChild(liveModal);
+
+
+let liveWs=null,liveAudioCtx=null,livePlayCtx=null,liveStream=null,liveProc=null,liveActive=false,liveMuted=false,liveNextTime=0,liveSources=[];
+function setLiveStatus(m,c="#cbd5e1"){const el=document.getElementById("liveStatus");if(el){el.textContent=m;el.style.color=c;}}
+function pulseOrb(s,g){const o=document.getElementById("liveOrb");if(o){o.style.transform=`scale(${s})`;o.style.boxShadow=g?`0 0 28px ${g}`:"none";}}
+function clearPlayback(){liveSources.forEach(x=>{try{x.stop();}catch(e){}});liveSources=[];if(livePlayCtx)liveNextTime=livePlayCtx.currentTime;}
+function floatTo16BitPCM(f){const o=new Int16Array(f.length);for(let i=0;i<f.length;i++){const v=Math.max(-1,Math.min(1,f[i]));o[i]=v<0?v*0x8000:v*0x7fff;}return o;}
+function downsampleBuffer(b,inR,outR){if(outR===inR)return b;const r=inR/outR,n=Math.round(b.length/r),res=new Float32Array(n);let p=0;for(let i=0;i<n;i++){const np=Math.round((i+1)*r);let sum=0,cnt=0;for(let j=p;j<np&&j<b.length;j++){sum+=b[j];cnt++;}res[i]=cnt?(sum/cnt):0;p=np;}return res;}
+function pcm16ToBase64(i16){const bytes=new Uint8Array(i16.buffer);let bin="";for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(bin);}
+function playPcm24k(b64){if(!livePlayCtx)return;const bin=atob(b64),bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);const i16=new Int16Array(bytes.buffer),f32=new Float32Array(i16.length);for(let i=0;i<i16.length;i++)f32[i]=i16[i]/32768;const buf=livePlayCtx.createBuffer(1,f32.length,24000);buf.getChannelData(0).set(f32);const src=livePlayCtx.createBufferSource();src.buffer=buf;src.connect(livePlayCtx.destination);const now=livePlayCtx.currentTime;if(liveNextTime<now)liveNextTime=now+0.02;src.start(liveNextTime);liveNextTime+=buf.duration;liveSources.push(src);pulseOrb(1.14,"rgba(56,189,248,.65)");src.onended=()=>{liveSources=liveSources.filter(x=>x!==src);if(!liveSources.length&&liveActive)pulseOrb(1,"rgba(34,197,94,.4)");};}
+
+
+async function startLiveSession(){
+  if(liveActive)return;
+  setLiveStatus("جارٍ جلب الإعدادات...");
+  let cfg;
+  try{const r=await fetch("/live-config");cfg=await r.json();}
+  catch(e){setLiveStatus("تعذر الوصول للخادم.","#f87171");return;}
+  if(!cfg||!cfg.ok||!cfg.apiKey){
+    setLiveStatus("أضف GEMINI_API_KEY أولاً.","#f87171");return;
+  }
+  const AC=window.AudioContext||window.webkitAudioContext;
+  livePlayCtx=livePlayCtx||new AC({sampleRate:24000});
+  if(livePlayCtx.state==="suspended")await livePlayCtx.resume();
+  liveNextTime=livePlayCtx.currentTime;
+  try{
+    liveStream=await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}
+    });
+  }catch(e){setLiveStatus("تعذر الوصول للميكروفون.","#f87171");return;}
+  const k=encodeURIComponent(cfg.apiKey);
+  const u="wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key="+k;
+  liveWs=new WebSocket(u);
+  liveActive=true;
+  const tg=document.getElementById("liveToggle");
+  if(tg){tg.textContent="إيقاف Live";tg.style.background="#dc2626";}
+  setLiveStatus("جارٍ الاتصال بـ Live...");
+  liveWs.onopen=()=>{
+    setLiveStatus("متصل — تحدث الآن","#4ade80");
+    pulseOrb(1.06,"rgba(34,197,94,.5)");
+    const sys=cfg.systemPrompt||"اسمك نبض، مساعد ذكي عربي، ومطورك هو أنس.";
+    const setup={
+      setup:{
+        model:"models/gemini-2.5-flash",
+        generationConfig:{
+          responseModalities:["AUDIO"],
+          speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:"Aoede"}}}
+        },
+        systemInstruction:{parts:[{text:sys}]}
+      }
+    };
+    liveWs.send(JSON.stringify(setup));
+    liveAudioCtx=new AC();
+    const src=liveAudioCtx.createMediaStreamSource(liveStream);
+    liveProc=liveAudioCtx.createScriptProcessor(4096,1,1);
+    src.connect(liveProc);
+    liveProc.connect(liveAudioCtx.destination);
+    liveProc.onaudioprocess=(ev)=>{
+      if(!liveActive||liveMuted||!liveWs||liveWs.readyState!==1)return;
+      const ch=ev.inputBuffer.getChannelData(0);
+      const pcm=floatTo16BitPCM(downsampleBuffer(ch,liveAudioCtx.sampleRate,16000));
+      const chunk={mimeType:"audio/pcm;rate=16000",data:pcm16ToBase64(pcm)};
+      liveWs.send(JSON.stringify({realtimeInput:{mediaChunks:[chunk]}}));
+    };
+  };
+  liveWs.onmessage=async(ev)=>{
+    try{
+      const raw=ev.data instanceof Blob?await ev.data.text():ev.data;
+      const msg=JSON.parse(raw);
+      if(msg.serverContent?.interrupted){
+        clearPlayback();
+        setLiveStatus("تمت المقاطعة — استمع إليك","#facc15");
+        return;
+      }
+      const parts=msg.serverContent?.modelTurn?.parts||[];
+      for(const p of parts){
+        const mime=p.inlineData?.mimeType||"";
+        if(mime.startsWith("audio/pcm")&&p.inlineData.data){
+          setLiveStatus("نبض يتحدث...","#38bdf8");
+          playPcm24k(p.inlineData.data);
+        }
+      }
+      if(msg.serverContent?.turnComplete&&liveActive){
+        setLiveStatus("جاهز — تحدث الآن","#4ade80");
+      }
+    }catch(e){}
+  };
+  liveWs.onerror=()=>setLiveStatus("خطأ في اتصال Live.","#f87171");
+  liveWs.onclose=()=>stopLiveSession(false);
+}
+
 </script></body></html>
